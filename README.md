@@ -3,6 +3,20 @@
 ![Python](https://img.shields.io/badge/Python-3.10-blue)
 ![PyTorch](https://img.shields.io/badge/PyTorch-DeepLearning-red)
 ![HuggingFace](https://img.shields.io/badge/HuggingFace-SetFit-yellow)
+![Dataset](https://img.shields.io/badge/Dataset-BBC%20News-green)
+
+## 📚 Table of Contents
+
+- [Overview](#-overview)
+- [Problem Statement](#-problem-statement)
+- [About SetFit](#-about-setfit-paper-summary)
+- [Methodology](#-methodology)
+- [Experiments & Results](#-experiments--results)
+- [Project Architecture](#-project-architecture)
+- [How to Run](#-how-to-run)
+- [Key Insights](#-key-insights)
+- [Results](#-results)
+- [Future Work](#-future-work)
 
 ---
 
@@ -256,18 +270,45 @@ Prediction: OTHER
 
 ---
 
+## 📊 Results
+
+### 🔹 Baseline (SetFit)
+
+| Seed | Accuracy |
+|------|--------|
+| 0 | 0.716 |
+| 1 | 0.699 |
+| 2 | 0.710 |
+
+**Mean Accuracy:** ~0.708
+
+---
+
+### 🔹 Hard Negative (Ours)
+
+| Seed | Accuracy |
+|------|--------|
+| 0 | 0.955 |
+| 42 | 0.939 |
+
+**Mean Accuracy:** ~0.947
+
+---
+
+### 🚀 Improvement
+
+- Absolute gain: **+23.9%**
+- Hard negative mining significantly improves:
+  - semantic discrimination
+  - decision boundary sharpness
+
+> 👉 This demonstrates that **pair quality > model complexity** in few-shot learning.
+---
+
 ## 📌 Future Work
 
 * Adaptive hard negative mining
 * Label semantic injection
 * Contrastive loss variants
 * Calibration & uncertainty estimation
-
----
-
-## ⭐ Final Note
-
-This project demonstrates how:
-
-> **Small models + smart data construction > large models with brute force**
 
