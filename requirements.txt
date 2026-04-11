@@ -1,0 +1,20 @@
+# Core
+torch
+sentence-transformers
+setfit
+
+# Data handling
+datasets
+numpy
+pandas
+
+# ML utilities
+scikit-learn
+
+# Visualization
+matplotlib
+seaborn
+
+# Utils
+tqdm
+jupyter
