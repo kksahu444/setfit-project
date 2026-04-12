@@ -1,0 +1,46 @@
+dataset:
+  name: SetFit/bbc-news
+  text_column: text
+  label_column: label
+  label_names:
+    - BUSINESS
+    - ENTERTAINMENT
+    - POLITICS & GOVERNANCE
+    - SPORTS
+    - EDUCATION & TECHNOLOGY
+
+data_loader:
+  k_per_class: 8
+  seed: 42
+  test_size: 0.2
+
+train:
+  base_model_name: sentence-transformers/paraphrase-mpnet-base-v2
+  batch_size: 16
+  epochs: 1
+  lr_max_iter: 1000
+  mode: baseline
+  k_per_class: 8
+  test_size: 0.2
+  seeds: [0, 1, 2, 3]
+  pair_sampling:
+    num_pos_per_anchor: 1
+    num_neg_per_anchor: 1
+  hard_negative:
+    k_hard: 2
+    k_easy: 1
+
+evaluate:
+  results_dir: results/baseline
+  output_dir: results/baseline
+  per_seed_plot_title: Per-seed Accuracy
+  summary_bar_label: Model
+
+demo:
+  threshold: 0.1
+  label_map:
+    0: BUSINESS
+    1: ENTERTAINMENT
+    2: POLITICS & GOVERNANCE
+    3: SPORTS
+    4: EDUCATION & TECHNOLOGY

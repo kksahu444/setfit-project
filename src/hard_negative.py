@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List, Sequence
+import random
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -29,11 +30,6 @@ class HardNegativeConfig:
 
     k_hard: int = 2
     k_easy: int = 0
-
-
-# -----------------------------------------------------------------------------
-# Embedding utilities
-# -----------------------------------------------------------------------------
 
 
 def encode_samples(
@@ -59,11 +55,6 @@ def encode_samples(
     )
 
     return embeddings
-
-
-# -----------------------------------------------------------------------------
-# Hard Negative Mining
-# -----------------------------------------------------------------------------
 
 
 def build_hard_negative_pairs(
@@ -104,8 +95,8 @@ def build_hard_negative_pairs(
         if not pos_indices or not neg_indices:
             continue
 
-        # Select one positive
-        pos_j: int = pos_indices[0]
+        # Select one positive at random for better pair diversity.
+        pos_j: int = random.choice(pos_indices)
         pairs.append(Pair(anchor.text, samples[pos_j].text, 1))
 
         # Sort negatives by similarity (descending)
@@ -128,11 +119,6 @@ def build_hard_negative_pairs(
                 pairs.append(Pair(anchor.text, samples[j].text, 0))
 
     return pairs
-
-
-# -----------------------------------------------------------------------------
-# Debug / CLI
-# -----------------------------------------------------------------------------
 
 
 def _demo() -> None:

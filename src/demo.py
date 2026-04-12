@@ -15,26 +15,12 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.linear_model import LogisticRegression
-
-THRESHOLD = 0.1
-
-LABEL_MAP = {
-    0: "BUSINESS",
-    1: "ENTERTAINMENT",
-    2: "POLITICS & GOVERNANCE",
-    3: "SPORTS",
-    4: "EDUCATION & TECHNOLOGY",
-}
-
-
-# -----------------------------------------------------------------------------
-# Loading utilities
-# -----------------------------------------------------------------------------
+from config_utils import load_config
 
 
 def load_encoder(model_dir: Path) -> SentenceTransformer:
@@ -55,21 +41,18 @@ def load_classifier(model_dir: Path) -> LogisticRegression:
         data = json.load(f)
 
     clf = LogisticRegression()
-    clf.classes_ = np.array(data["classes"])  
-    clf.coef_ = np.array(data["coef"])  
+    clf.classes_ = np.array(data["classes"])
+    clf.coef_ = np.array(data["coef"])
     clf.intercept_ = np.array(data["intercept"])
     return clf
-
-
-# -----------------------------------------------------------------------------
-# Inference
-# -----------------------------------------------------------------------------
 
 
 def predict(
     model: SentenceTransformer,
     clf: LogisticRegression,
     texts: List[str],
+    threshold: float,
+    label_map: Dict[int, str],
 ) -> List[str]:
     """Predict labels for a list of texts with confidence threshold."""
     embeddings: np.ndarray = model.encode(
@@ -87,22 +70,23 @@ def predict(
         max_idx: int = int(np.argmax(prob_vec))
         max_prob: float = float(np.max(prob_vec))
 
-        if max_prob < THRESHOLD:
+        if max_prob < threshold:
             results.append("OTHER")
         else:
-            label_name = LABEL_MAP[max_idx]
+            label_name = label_map.get(max_idx, str(max_idx))
             results.append(f"{label_name} ({max_prob:.2f})")
 
     return results
 
 
-# -----------------------------------------------------------------------------
-# CLI
-# -----------------------------------------------------------------------------
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="SetFit Hard-Negative Demo")
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="configs/default.yaml",
+        help="Path to YAML config file.",
+    )
     parser.add_argument(
         "--model_dir",
         type=str,
@@ -120,8 +104,28 @@ def main() -> None:
         default=None,
         help="Single text input (non-interactive mode)",
     )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Confidence threshold for OTHER class rejection.",
+    )
 
     args = parser.parse_args()
+
+    config = load_config(args.config)
+    demo_cfg = config.get("demo", {})
+
+    threshold = (
+        args.threshold
+        if args.threshold is not None
+        else float(demo_cfg.get("threshold", 0.1))
+    )
+
+    raw_label_map = demo_cfg.get("label_map", {})
+    if not isinstance(raw_label_map, dict):
+        raise ValueError("demo.label_map must be a mapping in config.")
+    label_map: Dict[int, str] = {int(k): str(v) for k, v in raw_label_map.items()}
 
     model_dir = Path(args.model_dir)
 
@@ -135,14 +139,26 @@ def main() -> None:
             if user_input.lower() in {"exit", "quit"}:
                 break
 
-            preds = predict(model, clf, [user_input])
+            preds = predict(
+                model,
+                clf,
+                [user_input],
+                threshold=threshold,
+                label_map=label_map,
+            )
             print(f"Prediction: {preds[0]}")
 
     else:
         if args.text is None:
             raise ValueError("Provide --text or use --interactive mode")
 
-        preds = predict(model, clf, [args.text])
+        preds = predict(
+            model,
+            clf,
+            [args.text],
+            threshold=threshold,
+            label_map=label_map,
+        )
         print(f"Prediction: {preds[0]}")
 
 

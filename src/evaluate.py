@@ -21,11 +21,7 @@ import csv
 import numpy as np
 import matplotlib.pyplot as plt
 import argparse
-
-
-# -----------------------------------------------------------------------------
-# Data structures
-# -----------------------------------------------------------------------------
+from config_utils import load_config
 
 
 @dataclass(frozen=True)
@@ -172,15 +168,32 @@ def plot_summary_bar(
 
 
 def _cli() -> None:
-
     parser = argparse.ArgumentParser(description="Evaluate experiment results.")
-    parser.add_argument("--results_dir", type=str, required=True)
-    parser.add_argument("--output_dir", type=str, required=True)
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="configs/default.yaml",
+        help="Path to YAML config file.",
+    )
+    parser.add_argument("--results_dir", type=str, default=None)
+    parser.add_argument("--output_dir", type=str, default=None)
 
     args = parser.parse_args()
 
-    results_dir = Path(args.results_dir)
-    output_dir = Path(args.output_dir)
+    config = load_config(args.config)
+    evaluate_cfg = config.get("evaluate", {})
+
+    results_dir_value = args.results_dir or str(
+        evaluate_cfg.get("results_dir", "results/baseline")
+    )
+    output_dir_value = args.output_dir or str(
+        evaluate_cfg.get("output_dir", "results/baseline")
+    )
+    per_seed_title = str(evaluate_cfg.get("per_seed_plot_title", "Per-seed Accuracy"))
+    summary_label = str(evaluate_cfg.get("summary_bar_label", "Model"))
+
+    results_dir = Path(results_dir_value)
+    output_dir = Path(output_dir_value)
 
     results = load_seed_results(results_dir)
 
@@ -189,8 +202,8 @@ def _cli() -> None:
     save_summary(summary, output_dir / "results_summary.json")
     save_csv(results, output_dir / "results.csv")
 
-    plot_results(results, "Per-seed Accuracy", output_dir / "per_seed.png")
-    plot_summary_bar(summary, "Model", output_dir / "summary.png")
+    plot_results(results, per_seed_title, output_dir / "per_seed.png")
+    plot_summary_bar(summary, summary_label, output_dir / "summary.png")
 
     print("Evaluation complete")
     print(summary)

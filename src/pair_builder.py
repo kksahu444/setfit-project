@@ -31,11 +31,6 @@ class Pair:
     label: int
 
 
-# -----------------------------------------------------------------------------
-# Baseline Pair Construction
-# -----------------------------------------------------------------------------
-
-
 def build_all_pairs(samples: Sequence[Sample]) -> List[Pair]:
     """Construct all possible pairs (quadratic) from dataset.
 
@@ -60,11 +55,6 @@ def build_all_pairs(samples: Sequence[Sample]) -> List[Pair]:
             )
 
     return pairs
-
-
-# -----------------------------------------------------------------------------
-# Efficient Sampling-Based Pair Construction
-# -----------------------------------------------------------------------------
 
 
 def build_sampled_pairs(
@@ -113,35 +103,6 @@ def build_sampled_pairs(
     return pairs
 
 
-# -----------------------------------------------------------------------------
-# Placeholder for Hard Negative Mining (to be implemented later)
-# -----------------------------------------------------------------------------
-
-
-def build_hard_negative_pairs(
-    samples: Sequence[Sample],
-) -> List[Pair]:
-    """Placeholder for hard-negative mining.
-
-    This will later be replaced with embedding-based selection.
-
-    Args:
-        samples: Input dataset
-
-    Returns:
-        List of Pair objects
-
-    Raises:
-        NotImplementedError: Always, until implemented
-    """
-    raise NotImplementedError("Hard negative mining not implemented yet.")
-
-
-# -----------------------------------------------------------------------------
-# Utility
-# -----------------------------------------------------------------------------
-
-
 def pairs_to_tuples(pairs: Sequence[Pair]) -> List[Tuple[str, str, int]]:
     """Convert Pair objects into tuple format.
 
@@ -154,11 +115,6 @@ def pairs_to_tuples(pairs: Sequence[Pair]) -> List[Tuple[str, str, int]]:
         List of (text_a, text_b, label)
     """
     return [(p.text_a, p.text_b, p.label) for p in pairs]
-
-
-# -----------------------------------------------------------------------------
-# Debug / CLI
-# -----------------------------------------------------------------------------
 
 
 def _demo() -> None:

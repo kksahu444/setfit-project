@@ -79,13 +79,17 @@ setfit-project/
 │   ├── baseline/
 │   └── hard_negative/
 │
+├── configs/
+│   └── default.yaml       # Centralized project settings
+│
 ├── src/
 │   ├── data_loader.py     # Dataset + few-shot sampling
 │   ├── pair_builder.py    # Pair construction
 │   ├── hard_negative.py   # Hard negative mining
 │   ├── train.py           # Training pipeline
 │   ├── evaluate.py        # Metrics + plots
-│   └── demo.py            # Interactive inference
+│   ├── demo.py            # Interactive inference
+│   └── config_utils.py    # YAML config loader
 │
 ├── requirements.txt       # Project dependencies
 ├── LICENSE                # Apache license
@@ -196,6 +200,17 @@ We evaluate using standard classification metrics:
 
 ## 🚀 How to Run
 
+### 🔹 0. Configure experiment settings
+
+All defaults are now stored in:
+
+```bash
+configs/default.yaml
+```
+
+You can edit dataset/model/threshold/seeds and other values there.
+All scripts support `--config` and still allow CLI overrides for key options.
+
 ---
 
 ### 🔹 1. Install dependencies
@@ -209,7 +224,7 @@ pip install -r requirements.txt
 ### 🔹 2. Generate dataset
 
 ```bash
-python src/data_loader.py --k_per_class 8 --seed 42 --test_size 0.2
+python src/data_loader.py --config configs/default.yaml
 ```
 
 Outputs:
@@ -224,7 +239,7 @@ data/test.txt
 ### 🔹 3. Train baseline
 
 ```bash
-python src/train.py --mode baseline --k_per_class 8 --seeds 0 1 12 42
+python src/train.py --config configs/default.yaml --mode baseline
 ```
 
 ---
@@ -232,7 +247,7 @@ python src/train.py --mode baseline --k_per_class 8 --seeds 0 1 12 42
 ### 🔹 4. Train hard negative model
 
 ```bash
-python src/train.py --mode hard_negative --k_per_class 8 --seeds 0 1 12 42
+python src/train.py --config configs/default.yaml --mode hard_negative
 ```
 
 ---
@@ -240,8 +255,8 @@ python src/train.py --mode hard_negative --k_per_class 8 --seeds 0 1 12 42
 ### 🔹 5. Evaluate
 
 ```bash
-python src/evaluate.py --results_dir results/baseline --output_dir results/baseline
-python src/evaluate.py --results_dir results/hard_negative --output_dir results/hard_negative
+python src/evaluate.py --config configs/default.yaml --results_dir results/baseline --output_dir results/baseline
+python src/evaluate.py --config configs/default.yaml --results_dir results/hard_negative --output_dir results/hard_negative
 ```
 
 ---
@@ -249,7 +264,7 @@ python src/evaluate.py --results_dir results/hard_negative --output_dir results/
 ### 🔹 6. Run demo
 
 ```bash
-python src/demo.py --model_dir results/hard_negative/seed_0 --interactive
+python src/demo.py --config configs/default.yaml --model_dir results/hard_negative/seed_0 --interactive
 ```
 
 ---

@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Dict, List, Optional, Sequence
 import argparse
 
 import numpy as np
@@ -29,6 +29,7 @@ from sentence_transformers import (
 )
 from sentence_transformers.sentence_transformer.losses import CosineSimilarityLoss
 from hard_negative import build_hard_negative_pairs, encode_samples, HardNegativeConfig
+from config_utils import load_config
 
 from data_loader import (
     Sample,
@@ -39,12 +40,6 @@ from data_loader import (
     save_samples_jsonl,
 )
 from pair_builder import Pair, build_sampled_pairs
-
-BASE_MODEL_NAME: str = "sentence-transformers/paraphrase-mpnet-base-v2"
-BATCH_SIZE: int = 16
-EPOCHS: int = 1
-LR_MAX_ITER: int = 1000
-BBC_DATASET_NAME: str = "SetFit/bbc-news"
 
 
 class PairDataset(Dataset[InputExample]):
@@ -90,7 +85,11 @@ def _train_encoder(
     train_examples: List[InputExample] = _pairs_to_input_examples(pairs)
     train_dataset = PairDataset(train_examples)
     train_loader: DataLoader[InputExample] = DataLoader(
-        train_dataset, shuffle=True, batch_size=batch_size, num_workers=0, pin_memory=False
+        train_dataset,
+        shuffle=True,
+        batch_size=batch_size,
+        num_workers=0,
+        pin_memory=False,
     )
 
     loss = CosineSimilarityLoss(model)
@@ -105,6 +104,7 @@ def _train_encoder(
 def _train_head(
     model: SentenceTransformer,
     train_samples: Sequence[Sample],
+    lr_max_iter: int,
 ) -> LogisticRegression:
     """Train Logistic Regression classifier on embeddings."""
     texts: List[str] = [s.text for s in train_samples]
@@ -112,7 +112,7 @@ def _train_head(
 
     X: np.ndarray = _encode_texts(model, texts)
 
-    clf = LogisticRegression(max_iter=LR_MAX_ITER)
+    clf = LogisticRegression(max_iter=lr_max_iter)
     clf.fit(X, labels)
     return clf
 
@@ -147,30 +147,53 @@ def _evaluate(
 
 def run_single_seed(
     dataset_name: str,
+    text_column: str,
+    label_column: str,
+    label_names: Optional[Sequence[str]],
     seed: int,
     k_per_class: int,
+    test_size: float,
     output_dir: Path,
     mode: str,
+    base_model_name: str,
+    batch_size: int,
+    epochs: int,
+    lr_max_iter: int,
+    num_pos_per_anchor: int,
+    num_neg_per_anchor: int,
+    hard_negative_config: HardNegativeConfig,
 ) -> Dict[str, float]:
     """Run one seed: data -> pairs -> train -> eval -> save artifacts."""
 
     print(f"\n========== Running seed {seed} ==========")
 
     # 1) Load full dataset (train split only; we create our own split)
-    full_samples: List[Sample] = load_hf_dataset(dataset_name, split="train")
+    full_samples: List[Sample] = load_hf_dataset(
+        dataset_name,
+        split="train",
+        text_column=text_column,
+        label_column=label_column,
+        label_names=label_names,
+    )
 
     # 2) Few-shot setup (stratified split + k per class sampling)
     train_fs, test = few_shot_train_test_setup(
-        full_samples, k_per_class=k_per_class, seed=seed, test_size=0.2
+        full_samples,
+        k_per_class=k_per_class,
+        seed=seed,
+        test_size=test_size,
     )
 
     # 3) Initialize encoder
-    model = SentenceTransformer(BASE_MODEL_NAME)
+    model = SentenceTransformer(base_model_name)
 
     # 4) Build baseline pairs (random sampling)
     if mode == "baseline":
         pairs: List[Pair] = build_sampled_pairs(
-            train_fs, num_pos_per_anchor=1, num_neg_per_anchor=1, seed=seed
+            train_fs,
+            num_pos_per_anchor=num_pos_per_anchor,
+            num_neg_per_anchor=num_neg_per_anchor,
+            seed=seed,
         )
 
     elif mode == "hard_negative":
@@ -180,12 +203,10 @@ def run_single_seed(
 
         print(f"[Seed {seed}] Building hard negative pairs...")
 
-        config = HardNegativeConfig(k_hard=2, k_easy=1)
-
         pairs = build_hard_negative_pairs(
             train_fs,
             embeddings,
-            config,
+            hard_negative_config,
         )
 
         print(f"[Seed {seed}] Generated {len(pairs)} pairs")
@@ -194,10 +215,14 @@ def run_single_seed(
         raise ValueError(f"Unsupported mode: {mode}")
 
     # 5) Train encoder
-    _train_encoder(model, pairs, batch_size=BATCH_SIZE, epochs=EPOCHS)
+    _train_encoder(model, pairs, batch_size=batch_size, epochs=epochs)
 
     # 6) Train classifier head
-    clf: LogisticRegression = _train_head(model, train_fs)
+    clf: LogisticRegression = _train_head(
+        model,
+        train_fs,
+        lr_max_iter=lr_max_iter,
+    )
 
     # 7) Evaluate
     metrics: Dict[str, float] = _evaluate(model, clf, test)
@@ -243,10 +268,21 @@ def run_single_seed(
 
 def run_experiment(
     dataset_name: str,
+    text_column: str,
+    label_column: str,
+    label_names: Optional[Sequence[str]],
     seeds: Sequence[int],
     k_per_class: int,
+    test_size: float,
     output_dir: Path,
     mode: str,
+    base_model_name: str,
+    batch_size: int,
+    epochs: int,
+    lr_max_iter: int,
+    num_pos_per_anchor: int,
+    num_neg_per_anchor: int,
+    hard_negative_config: HardNegativeConfig,
 ) -> Dict[str, float]:
     """Run multiple seeds and aggregate mean/std metrics."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -256,10 +292,21 @@ def run_experiment(
     for seed in seeds:
         metrics = run_single_seed(
             dataset_name=dataset_name,
+            text_column=text_column,
+            label_column=label_column,
+            label_names=label_names,
             seed=seed,
             k_per_class=k_per_class,
+            test_size=test_size,
             output_dir=output_dir,
             mode=mode,
+            base_model_name=base_model_name,
+            batch_size=batch_size,
+            epochs=epochs,
+            lr_max_iter=lr_max_iter,
+            num_pos_per_anchor=num_pos_per_anchor,
+            num_neg_per_anchor=num_neg_per_anchor,
+            hard_negative_config=hard_negative_config,
         )
         all_metrics.append(metrics["accuracy"])
 
@@ -275,29 +322,95 @@ def run_experiment(
     return summary
 
 
-# -----------------------------------------------------------------------------
-# CLI
-# -----------------------------------------------------------------------------
-
-
 def _cli() -> None:
-
     parser = argparse.ArgumentParser(description="Train baseline SetFit-style model.")
-    parser.add_argument("--k_per_class", type=int, default=8)
-    parser.add_argument("--seeds", type=int, nargs="+", default=list(range(4)))
     parser.add_argument(
-        "--mode", type=str, choices=["baseline", "hard_negative"], default="baseline"
+        "--config",
+        type=str,
+        default="configs/default.yaml",
+        help="Path to YAML config file.",
     )
+    parser.add_argument("--k_per_class", type=int, default=None)
+    parser.add_argument("--seeds", type=int, nargs="+", default=None)
+    parser.add_argument("--test_size", type=float, default=None)
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["baseline", "hard_negative"],
+        default=None,
+    )
+    parser.add_argument("--dataset_name", type=str, default=None)
 
     args = parser.parse_args()
 
-    output_path = Path("results") / args.mode
+    config = load_config(args.config)
+    dataset_cfg = config.get("dataset", {})
+    train_cfg = config.get("train", {})
+    pair_cfg = train_cfg.get("pair_sampling", {})
+    hard_negative_cfg = train_cfg.get("hard_negative", {})
+
+    dataset_name = args.dataset_name or str(dataset_cfg.get("name", "SetFit/bbc-news"))
+    text_column = str(dataset_cfg.get("text_column", "text"))
+    label_column = str(dataset_cfg.get("label_column", "label"))
+
+    labels_raw = dataset_cfg.get("label_names")
+    label_names: Optional[List[str]] = None
+    if isinstance(labels_raw, list):
+        label_names = [str(v) for v in labels_raw]
+
+    mode = args.mode or str(train_cfg.get("mode", "baseline"))
+    k_per_class = (
+        args.k_per_class
+        if args.k_per_class is not None
+        else int(train_cfg.get("k_per_class", 8))
+    )
+    test_size = (
+        args.test_size
+        if args.test_size is not None
+        else float(train_cfg.get("test_size", 0.2))
+    )
+
+    seeds = args.seeds
+    if seeds is None:
+        cfg_seeds = train_cfg.get("seeds", [0, 1, 2, 3])
+        if not isinstance(cfg_seeds, list):
+            raise ValueError("train.seeds must be a list in config.")
+        seeds = [int(seed) for seed in cfg_seeds]
+
+    base_model_name = str(
+        train_cfg.get(
+            "base_model_name", "sentence-transformers/paraphrase-mpnet-base-v2"
+        )
+    )
+    batch_size = int(train_cfg.get("batch_size", 16))
+    epochs = int(train_cfg.get("epochs", 1))
+    lr_max_iter = int(train_cfg.get("lr_max_iter", 1000))
+    num_pos_per_anchor = int(pair_cfg.get("num_pos_per_anchor", 1))
+    num_neg_per_anchor = int(pair_cfg.get("num_neg_per_anchor", 1))
+
+    hard_negative_config = HardNegativeConfig(
+        k_hard=int(hard_negative_cfg.get("k_hard", 2)),
+        k_easy=int(hard_negative_cfg.get("k_easy", 1)),
+    )
+
+    output_path = Path("results") / mode
     summary = run_experiment(
-        dataset_name=BBC_DATASET_NAME,
-        seeds=args.seeds,
-        k_per_class=args.k_per_class,
+        dataset_name=dataset_name,
+        text_column=text_column,
+        label_column=label_column,
+        label_names=label_names,
+        seeds=seeds,
+        k_per_class=k_per_class,
+        test_size=test_size,
         output_dir=output_path,
-        mode=args.mode,
+        mode=mode,
+        base_model_name=base_model_name,
+        batch_size=batch_size,
+        epochs=epochs,
+        lr_max_iter=lr_max_iter,
+        num_pos_per_anchor=num_pos_per_anchor,
+        num_neg_per_anchor=num_neg_per_anchor,
+        hard_negative_config=hard_negative_config,
     )
 
     print("Summary:")

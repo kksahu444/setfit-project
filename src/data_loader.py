@@ -25,16 +25,7 @@ import numpy as np
 from datasets import Dataset, load_dataset
 from sklearn.model_selection import StratifiedShuffleSplit
 import argparse
-
-BBC_DATASET_NAME: str = "SetFit/bbc-news"
-
-BBC_LABEL_NAMES: List[str] = [
-    "BUSINESS",
-    "ENTERTAINMENT",
-    "POLITICS & GOVERNANCE",
-    "SPORTS",
-    "EDUCATION & TECHNOLOGY",
-]
+from config_utils import load_config
 
 
 # -----------------------------
@@ -260,11 +251,6 @@ def save_samples_txt(
             f.write(f"[{label_name}] {s.text}\n\n")
 
 
-# -----------------------------
-# Metadata helpers
-# -----------------------------
-
-
 def build_split_metadata(
     dataset_name: str,
     seed: int,
@@ -289,35 +275,64 @@ def build_split_metadata(
 
 
 def _demo() -> None:
-
     parser = argparse.ArgumentParser(description="Load and sample a few-shot dataset.")
-    parser.add_argument("--k_per_class", type=int, default=8)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--test_size", type=float, default=0.2)
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="configs/default.yaml",
+        help="Path to YAML config file.",
+    )
+    parser.add_argument("--k_per_class", type=int, default=None)
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--test_size", type=float, default=None)
     args = parser.parse_args()
 
+    config = load_config(args.config)
+    dataset_cfg = config.get("dataset", {})
+    loader_cfg = config.get("data_loader", {})
+
+    dataset_name = str(dataset_cfg.get("name", "SetFit/bbc-news"))
+    text_column = str(dataset_cfg.get("text_column", "text"))
+    label_column = str(dataset_cfg.get("label_column", "label"))
+    labels_raw = dataset_cfg.get("label_names")
+    label_names: Optional[List[str]] = None
+    if isinstance(labels_raw, list):
+        label_names = [str(v) for v in labels_raw]
+
+    k_per_class = (
+        args.k_per_class
+        if args.k_per_class is not None
+        else int(loader_cfg.get("k_per_class", 8))
+    )
+    seed = args.seed if args.seed is not None else int(loader_cfg.get("seed", 42))
+    test_size = (
+        args.test_size
+        if args.test_size is not None
+        else float(loader_cfg.get("test_size", 0.2))
+    )
+
     full_samples = load_hf_dataset(
-        dataset_name=BBC_DATASET_NAME,
+        dataset_name=dataset_name,
         split="train",
-        text_column="text",
-        label_column="label",
-        label_names=BBC_LABEL_NAMES,
+        text_column=text_column,
+        label_column=label_column,
+        label_names=label_names,
     )
 
     train_fs, test = few_shot_train_test_setup(
         full_samples,
-        k_per_class=args.k_per_class,
-        seed=args.seed,
-        test_size=args.test_size,
+        k_per_class=k_per_class,
+        seed=seed,
+        test_size=test_size,
     )
 
     save_samples_txt("data/train.txt", train_fs)
     save_samples_txt("data/test.txt", test)
 
     meta = build_split_metadata(
-        dataset_name=BBC_DATASET_NAME,
-        seed=args.seed,
-        k_per_class=args.k_per_class,
+        dataset_name=dataset_name,
+        seed=seed,
+        k_per_class=k_per_class,
         train_samples=train_fs,
         test_samples=test,
     )

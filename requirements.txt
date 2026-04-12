@@ -18,3 +18,4 @@ seaborn
 # Utils
 tqdm
 jupyter
+PyYAML
