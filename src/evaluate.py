@@ -34,11 +34,9 @@ class SeedResult:
 
     seed: int
     accuracy: float
-
-
-# -----------------------------------------------------------------------------
-# Loading utilities
-# -----------------------------------------------------------------------------
+    precision: float
+    recall: float
+    f1: float
 
 
 def load_seed_results(results_dir: Path) -> List[SeedResult]:
@@ -63,39 +61,36 @@ def load_seed_results(results_dir: Path) -> List[SeedResult]:
 
         seed_id: int = int(seed_dir.name.split("_")[1])
 
-        results.append(SeedResult(seed=seed_id, accuracy=float(data["accuracy"])))
+        results.append(
+            SeedResult(
+                seed=seed_id,
+                accuracy=float(data["accuracy"]),
+                precision=float(data["precision"]),
+                recall=float(data["recall"]),
+                f1=float(data["f1"]),
+            )
+        )
 
     return results
 
 
-# -----------------------------------------------------------------------------
-# Aggregation
-# -----------------------------------------------------------------------------
-
-
 def compute_summary(results: Sequence[SeedResult]) -> Dict[str, float]:
-    """Compute mean and std of accuracy.
-
-    Args:
-        results: Per-seed results
-
-    Returns:
-        Summary dictionary
-    """
+    """Compute mean and std for all metrics."""
     accuracies: np.ndarray = np.array([r.accuracy for r in results])
-
-    mean_acc: float = float(np.mean(accuracies))
-    std_acc: float = float(np.std(accuracies))
+    precisions: np.ndarray = np.array([r.precision for r in results])
+    recalls: np.ndarray = np.array([r.recall for r in results])
+    f1s: np.ndarray = np.array([r.f1 for r in results])
 
     return {
-        "accuracy_mean": mean_acc,
-        "accuracy_std": std_acc,
+        "accuracy_mean": float(np.mean(accuracies)),
+        "accuracy_std": float(np.std(accuracies)),
+        "precision_mean": float(np.mean(precisions)),
+        "precision_std": float(np.std(precisions)),
+        "recall_mean": float(np.mean(recalls)),
+        "recall_std": float(np.std(recalls)),
+        "f1_mean": float(np.mean(f1s)),
+        "f1_std": float(np.std(f1s)),
     }
-
-
-# -----------------------------------------------------------------------------
-# Saving utilities
-# -----------------------------------------------------------------------------
 
 
 def save_summary(summary: Dict[str, float], output_path: Path) -> None:
@@ -112,15 +107,10 @@ def save_csv(results: Sequence[SeedResult], output_path: Path) -> None:
 
     with output_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["seed", "accuracy"])
+        writer.writerow(["seed", "accuracy", "precision", "recall", "f1"])
 
         for r in results:
-            writer.writerow([r.seed, r.accuracy])
-
-
-# -----------------------------------------------------------------------------
-# Plotting
-# -----------------------------------------------------------------------------
+            writer.writerow([r.seed, r.accuracy, r.precision, r.recall, r.f1])
 
 
 def plot_results(
@@ -179,11 +169,6 @@ def plot_summary_bar(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path)
     plt.close()
-
-
-# -----------------------------------------------------------------------------
-# CLI
-# -----------------------------------------------------------------------------
 
 
 def _cli() -> None:

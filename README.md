@@ -10,13 +10,15 @@
 - [Overview](#-overview)
 - [Problem Statement](#-problem-statement)
 - [About SetFit](#-about-setfit-paper-summary)
-- [Methodology](#-methodology)
-- [Experiments & Results](#-experiments--results)
 - [Project Architecture](#-project-architecture)
+- [Methodology](#-methodology)
+- [Pipeline](#-pipeline)
+- [Experiments & Metrics](#-experiments)
 - [How to Run](#-how-to-run)
 - [Key Insights](#-key-insights)
 - [Results](#-results)
 - [Future Work](#-future-work)
+- [Authors](#-authors)
 
 ---
 
@@ -176,14 +178,19 @@ Across:
 
 * Multiple seeds
 * Few-shot setting (k=8)
+* Using multiple classification metrics beyond accuracy for a more comprehensive evaluation.
 
 ---
 
 ## 📈 Metrics
 
-* Accuracy
-* Mean ± Standard Deviation
-* Per-seed variability
+We evaluate using standard classification metrics:
+
+* Accuracy  
+* Precision (macro)  
+* Recall (macro)  
+* F1-score (macro)  
+* Mean ± Standard Deviation across seeds  
 
 ---
 
@@ -289,15 +296,16 @@ Prediction: OTHER
 | Seed | Accuracy |
 |------|--------|
 | 0 | 0.955 |
+| 1 | 0.935 |
 | 42 | 0.939 |
 
-**Mean Accuracy:** ~0.947
+**Mean Accuracy:** ~0.943
 
 ---
 
 ### 🚀 Improvement
 
-- Absolute gain: **+23.9%**
+- Absolute gain: **+23.5%**
 - Hard negative mining significantly improves:
   - semantic discrimination
   - decision boundary sharpness
@@ -311,4 +319,11 @@ Prediction: OTHER
 * Label semantic injection
 * Contrastive loss variants
 * Calibration & uncertainty estimation
+
+## 🎓 Authors
+
+* Mozeel Pradip Vanwani 
+* Mayank Seth 
+* Krishnkant Sahu
+* Burri Vivek Vardhan Verma 
 

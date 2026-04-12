@@ -20,7 +20,7 @@ import argparse
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from torch.utils.data import Dataset, DataLoader
 
 from sentence_transformers import (
@@ -40,21 +40,11 @@ from data_loader import (
 )
 from pair_builder import Pair, build_sampled_pairs
 
-
-# -----------------------------------------------------------------------------
-# Config (can be moved to YAML later)
-# -----------------------------------------------------------------------------
-
 BASE_MODEL_NAME: str = "sentence-transformers/paraphrase-mpnet-base-v2"
 BATCH_SIZE: int = 16
 EPOCHS: int = 1
 LR_MAX_ITER: int = 1000
 BBC_DATASET_NAME: str = "SetFit/bbc-news"
-
-
-# -----------------------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------------------
 
 
 class PairDataset(Dataset[InputExample]):
@@ -140,12 +130,19 @@ def _evaluate(
     preds: np.ndarray = clf.predict(X_test)
 
     acc: float = float(accuracy_score(labels, preds))
-    return {"accuracy": acc}
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        labels,
+        preds,
+        average="macro",
+        zero_division=0,
+    )
 
-
-# -----------------------------------------------------------------------------
-# Main training routine
-# -----------------------------------------------------------------------------
+    return {
+        "accuracy": acc,
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+    }
 
 
 def run_single_seed(
