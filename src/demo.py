@@ -12,10 +12,14 @@ The script loads both, encodes input text, and prints predicted class.
 
 from __future__ import annotations
 
+import os
 import argparse
 import json
 from pathlib import Path
 from typing import Dict, List
+
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+os.environ.setdefault("USE_TF", "0")
 
 import numpy as np
 from sentence_transformers import SentenceTransformer

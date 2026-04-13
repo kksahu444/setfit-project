@@ -1,0 +1,100 @@
+project:
+  name: SetFit-HNM
+  version: 1
+
+datasets:
+  bbc_news:
+    name: SetFit/bbc-news
+    text_column: text
+    label_column: label
+    label_names:
+      - BUSINESS
+      - ENTERTAINMENT
+      - POLITICS & GOVERNANCE
+      - SPORTS
+      - EDUCATION & TECHNOLOGY
+
+  ag_news:
+    name: ag_news
+    text_column: text
+    label_column: label
+    label_names:
+      - WORLD
+      - SPORTS
+      - BUSINESS
+      - SCI/TECH
+
+  sst5:
+    name: SetFit/sst5
+    text_column: text
+    label_column: label
+    label_names:
+      - VERY NEGATIVE
+      - NEGATIVE
+      - NEUTRAL
+      - POSITIVE
+      - VERY POSITIVE
+
+  emotion:
+    name: SetFit/emotion
+    text_column: text
+    label_column: label
+    label_names:
+      - SADNESS
+      - JOY
+      - LOVE
+      - ANGER
+      - FEAR
+      - SURPRISE
+
+  amazon_counterfactual_en:
+    name: SetFit/amazon_counterfactual_en
+    text_column: text
+    label_column: label
+    label_names:
+      - NON-COUNTERFACTUAL
+      - COUNTERFACTUAL
+
+  enron_spam:
+    name: SetFit/enron_spam
+    text_column: text
+    label_column: label
+    label_names:
+      - HAM
+      - SPAM
+
+train_defaults:
+  base_model_name: sentence-transformers/paraphrase-mpnet-base-v2
+  batch_size: 16
+  epochs: 1
+  lr_max_iter: 1000
+  test_size: 0.2
+  pair_sampling:
+    num_pos_per_anchor: 1
+    num_neg_per_anchor: 1
+  hard_negative:
+    k_hard: 2
+    k_easy: 1
+
+research:
+  hypotheses:
+    H1: Hard negatives improve macro-F1 and accuracy over random negatives in few-shot contrastive learning.
+    H2: Mixed hard+easy negatives provide more stable gains across datasets than single-strategy sampling.
+    H3: Pair strategy quality matters most when K is low.
+    H4: Threshold-based rejection improves reliability under low-confidence predictions.
+
+  claims:
+    C1: Supervision quality from pair construction is a dominant performance factor.
+    C2: SetFit-HNM is a consistent improvement over baseline SetFit on diverse text classification tasks.
+    C3: Confidence thresholding enables practical uncertainty-aware deployment behavior.
+
+  experiment_matrix:
+    datasets: [bbc_news, sst5, emotion, amazon_counterfactual_en, enron_spam]
+    k_values: [8, 16, 32, 64]
+    pair_strategies: [random, easy, hard, mixed]
+    seeds: [0, 1, 2, 3, 4]
+    output_root: results/research
+
+threshold_analysis:
+  thresholds: [0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90]
+  output_filename: threshold_analysis.csv

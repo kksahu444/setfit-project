@@ -209,4 +209,6 @@ __marimo__/
 mypy.ini
 data/
 results/
+scripts/
 context.txt
+plan.md

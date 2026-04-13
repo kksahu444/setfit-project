@@ -8,9 +8,13 @@ These pairs provide stronger training signals compared to random negatives.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 import random
+
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+os.environ.setdefault("USE_TF", "0")
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -61,6 +65,8 @@ def build_hard_negative_pairs(
     samples: Sequence[Sample],
     embeddings: np.ndarray,
     config: HardNegativeConfig,
+    num_pos_per_anchor: int = 1,
+    seed: Optional[int] = None,
 ) -> List[Pair]:
     """Construct contrastive pairs using hard-negative mining.
 
@@ -74,6 +80,7 @@ def build_hard_negative_pairs(
     """
     num_samples: int = len(samples)
     pairs: List[Pair] = []
+    rng = random.Random(seed)
 
     # Cosine similarity matrix (since embeddings are normalized)
     sim_matrix: np.ndarray = embeddings @ embeddings.T
@@ -95,9 +102,10 @@ def build_hard_negative_pairs(
         if not pos_indices or not neg_indices:
             continue
 
-        # Select one positive at random for better pair diversity.
-        pos_j: int = random.choice(pos_indices)
-        pairs.append(Pair(anchor.text, samples[pos_j].text, 1))
+        # Select positives at random for better pair diversity.
+        for _ in range(min(num_pos_per_anchor, len(pos_indices))):
+            pos_j: int = rng.choice(pos_indices)
+            pairs.append(Pair(anchor.text, samples[pos_j].text, 1))
 
         # Sort negatives by similarity (descending)
         neg_sorted: List[int] = sorted(

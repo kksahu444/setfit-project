@@ -12,22 +12,33 @@ Pipeline:
 
 from __future__ import annotations
 
+import os
 import json
+import importlib
 from dataclasses import asdict
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 import argparse
+
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+os.environ.setdefault("USE_TF", "0")
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support
 from torch.utils.data import Dataset, DataLoader
 
 from sentence_transformers import (
     InputExample,
     SentenceTransformer,
 )
-from sentence_transformers.sentence_transformer.losses import CosineSimilarityLoss
+
+try:
+    _loss_module = importlib.import_module("sentence_transformers.losses")
+except ModuleNotFoundError:
+    _loss_module = importlib.import_module("sentence_transformers.sentence_transformer.losses")
+
+CosineSimilarityLoss = getattr(_loss_module, "CosineSimilarityLoss")
 from hard_negative import build_hard_negative_pairs, encode_samples, HardNegativeConfig
 from config_utils import load_config
 
@@ -121,7 +132,7 @@ def _evaluate(
     model: SentenceTransformer,
     clf: LogisticRegression,
     test_samples: Sequence[Sample],
-) -> Dict[str, float]:
+) -> Dict[str, Any]:
     """Evaluate classifier on test set."""
     texts: List[str] = [s.text for s in test_samples]
     labels: List[int] = [s.label for s in test_samples]
@@ -137,12 +148,55 @@ def _evaluate(
         zero_division=0,
     )
 
+    label_order: List[int] = sorted(set(labels))
+    per_class_precision_raw, per_class_recall_raw, per_class_f1_raw, per_class_support_raw = (
+        precision_recall_fscore_support(
+            labels,
+            preds,
+            labels=label_order,
+            average=None,
+            zero_division=0,
+        )
+    )
+
+    per_class_precision = np.asarray(per_class_precision_raw, dtype=float)
+    per_class_recall = np.asarray(per_class_recall_raw, dtype=float)
+    per_class_f1 = np.asarray(per_class_f1_raw, dtype=float)
+    per_class_support = np.asarray(per_class_support_raw, dtype=float)
+
+    per_class: Dict[str, Dict[str, float]] = {}
+    for i, label_id in enumerate(label_order):
+        per_class[str(label_id)] = {
+            "precision": float(per_class_precision[i]),
+            "recall": float(per_class_recall[i]),
+            "f1": float(per_class_f1[i]),
+            "support": float(per_class_support[i]),
+        }
+
+    cm = confusion_matrix(labels, preds, labels=label_order)
+
     return {
         "accuracy": acc,
         "precision": float(precision),
         "recall": float(recall),
         "f1": float(f1),
+        "label_order": label_order,
+        "per_class": per_class,
+        "confusion_matrix": cm.tolist(),
     }
+
+
+def _resolve_pair_strategy(mode: str, pair_strategy: Optional[str]) -> str:
+    """Resolve strategy while keeping backward compatibility with old mode-only flow."""
+    if pair_strategy:
+        return pair_strategy
+
+    if mode == "baseline":
+        return "random"
+    if mode == "hard_negative":
+        return "hard"
+
+    raise ValueError(f"Unsupported mode: {mode}")
 
 
 def run_single_seed(
@@ -155,6 +209,7 @@ def run_single_seed(
     test_size: float,
     output_dir: Path,
     mode: str,
+    pair_strategy: Optional[str],
     base_model_name: str,
     batch_size: int,
     epochs: int,
@@ -162,7 +217,7 @@ def run_single_seed(
     num_pos_per_anchor: int,
     num_neg_per_anchor: int,
     hard_negative_config: HardNegativeConfig,
-) -> Dict[str, float]:
+) -> Dict[str, Any]:
     """Run one seed: data -> pairs -> train -> eval -> save artifacts."""
 
     print(f"\n========== Running seed {seed} ==========")
@@ -187,8 +242,10 @@ def run_single_seed(
     # 3) Initialize encoder
     model = SentenceTransformer(base_model_name)
 
-    # 4) Build baseline pairs (random sampling)
-    if mode == "baseline":
+    # 4) Build contrastive pairs using selected strategy
+    strategy = _resolve_pair_strategy(mode=mode, pair_strategy=pair_strategy)
+
+    if strategy == "random":
         pairs: List[Pair] = build_sampled_pairs(
             train_fs,
             num_pos_per_anchor=num_pos_per_anchor,
@@ -196,23 +253,35 @@ def run_single_seed(
             seed=seed,
         )
 
-    elif mode == "hard_negative":
+    elif strategy in {"easy", "hard", "mixed"}:
         print(f"[Seed {seed}] Generating embeddings...")
 
         embeddings = encode_samples(model, train_fs)
 
-        print(f"[Seed {seed}] Building hard negative pairs...")
+        print(f"[Seed {seed}] Building {strategy} pairs...")
+
+        if strategy == "easy":
+            mining_config = HardNegativeConfig(k_hard=0, k_easy=max(1, num_neg_per_anchor))
+        elif strategy == "hard":
+            mining_config = HardNegativeConfig(k_hard=max(1, hard_negative_config.k_hard), k_easy=0)
+        else:
+            mining_config = HardNegativeConfig(
+                k_hard=max(1, hard_negative_config.k_hard),
+                k_easy=max(1, hard_negative_config.k_easy),
+            )
 
         pairs = build_hard_negative_pairs(
             train_fs,
             embeddings,
-            hard_negative_config,
+            mining_config,
+            num_pos_per_anchor=num_pos_per_anchor,
+            seed=seed,
         )
 
         print(f"[Seed {seed}] Generated {len(pairs)} pairs")
 
     else:
-        raise ValueError(f"Unsupported mode: {mode}")
+        raise ValueError(f"Unsupported pair strategy: {strategy}")
 
     # 5) Train encoder
     _train_encoder(model, pairs, batch_size=batch_size, epochs=epochs)
@@ -276,6 +345,7 @@ def run_experiment(
     test_size: float,
     output_dir: Path,
     mode: str,
+    pair_strategy: Optional[str],
     base_model_name: str,
     batch_size: int,
     epochs: int,
@@ -283,11 +353,12 @@ def run_experiment(
     num_pos_per_anchor: int,
     num_neg_per_anchor: int,
     hard_negative_config: HardNegativeConfig,
-) -> Dict[str, float]:
+) -> Dict[str, Any]:
     """Run multiple seeds and aggregate mean/std metrics."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
     all_metrics: List[float] = []
+    strategy = _resolve_pair_strategy(mode=mode, pair_strategy=pair_strategy)
 
     for seed in seeds:
         metrics = run_single_seed(
@@ -300,6 +371,7 @@ def run_experiment(
             test_size=test_size,
             output_dir=output_dir,
             mode=mode,
+            pair_strategy=strategy,
             base_model_name=base_model_name,
             batch_size=batch_size,
             epochs=epochs,
@@ -313,9 +385,12 @@ def run_experiment(
     mean_acc: float = float(np.mean(all_metrics))
     std_acc: float = float(np.std(all_metrics))
 
-    summary: Dict[str, float] = {
+    summary: Dict[str, Any] = {
         "accuracy_mean": mean_acc,
         "accuracy_std": std_acc,
+        "pair_strategy": strategy,
+        "mode": mode,
+        "k_per_class": k_per_class,
     }
 
     save_json(output_dir / "summary.json", summary)
@@ -339,7 +414,15 @@ def _cli() -> None:
         choices=["baseline", "hard_negative"],
         default=None,
     )
+    parser.add_argument(
+        "--pair_strategy",
+        type=str,
+        choices=["random", "easy", "hard", "mixed"],
+        default=None,
+        help="Pair construction strategy for ablation studies.",
+    )
     parser.add_argument("--dataset_name", type=str, default=None)
+    parser.add_argument("--output_dir", type=str, default=None)
 
     args = parser.parse_args()
 
@@ -359,6 +442,7 @@ def _cli() -> None:
         label_names = [str(v) for v in labels_raw]
 
     mode = args.mode or str(train_cfg.get("mode", "baseline"))
+    pair_strategy = args.pair_strategy or train_cfg.get("pair_strategy")
     k_per_class = (
         args.k_per_class
         if args.k_per_class is not None
@@ -393,7 +477,8 @@ def _cli() -> None:
         k_easy=int(hard_negative_cfg.get("k_easy", 1)),
     )
 
-    output_path = Path("results") / mode
+    run_label = pair_strategy if pair_strategy else mode
+    output_path = Path(args.output_dir) if args.output_dir else (Path("results") / str(run_label))
     summary = run_experiment(
         dataset_name=dataset_name,
         text_column=text_column,
@@ -404,6 +489,7 @@ def _cli() -> None:
         test_size=test_size,
         output_dir=output_path,
         mode=mode,
+        pair_strategy=str(pair_strategy) if pair_strategy else None,
         base_model_name=base_model_name,
         batch_size=batch_size,
         epochs=epochs,

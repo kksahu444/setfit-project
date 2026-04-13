@@ -269,6 +269,36 @@ python src/demo.py --config configs/default.yaml --model_dir results/hard_negati
 
 ---
 
+## 🔬 Research Experiments (Hypotheses + Ablations)
+
+Use the dedicated research config and matrix runner:
+
+```bash
+python src/run_research_experiments.py --config configs/research.yaml --dry_run
+python src/run_research_experiments.py --config configs/research.yaml
+```
+
+Run a pilot subset before full execution:
+
+```bash
+python src/run_research_experiments.py --config configs/research.yaml --datasets bbc_news,ag_news --k_values 8 --pair_strategies random,hard --seeds 0,1,2
+```
+
+Pair strategy options:
+
+* `random`
+* `easy`
+* `hard`
+* `mixed`
+
+Threshold analysis for uncertainty-aware behavior:
+
+```bash
+python src/threshold_analysis.py --config configs/research.yaml --model_dir results/research/bbc_news/k_8/hard/seed_0
+```
+
+---
+
 ## 💡 Example Output
 
 ```

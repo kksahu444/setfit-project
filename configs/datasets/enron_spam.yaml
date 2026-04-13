@@ -1,13 +1,10 @@
 dataset:
-  name: SetFit/bbc-news
+  name: SetFit/enron_spam
   text_column: text
   label_column: label
   label_names:
-    - BUSINESS
-    - ENTERTAINMENT
-    - POLITICS & GOVERNANCE
-    - SPORTS
-    - EDUCATION & TECHNOLOGY
+    - HAM
+    - SPAM
 
 data_loader:
   k_per_class: 8
@@ -23,7 +20,7 @@ train:
   pair_strategy: random
   k_per_class: 8
   test_size: 0.2
-  seeds: [0, 1, 2, 3]
+  seeds: [0, 1, 2, 3, 4]
   pair_sampling:
     num_pos_per_anchor: 1
     num_neg_per_anchor: 1
@@ -32,16 +29,13 @@ train:
     k_easy: 1
 
 evaluate:
-  results_dir: results/baseline
-  output_dir: results/baseline
+  results_dir: results/research/enron_spam
+  output_dir: results/research/enron_spam
   per_seed_plot_title: Per-seed Accuracy
   summary_bar_label: Model
 
 demo:
   threshold: 0.1
   label_map:
-    0: BUSINESS
-    1: ENTERTAINMENT
-    2: POLITICS & GOVERNANCE
-    3: SPORTS
-    4: EDUCATION & TECHNOLOGY
+    0: HAM
+    1: SPAM

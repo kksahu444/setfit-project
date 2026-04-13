@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import json
 import csv
@@ -33,6 +33,8 @@ class SeedResult:
     precision: float
     recall: float
     f1: float
+    per_class: Dict[str, Dict[str, float]]
+    confusion_matrix: Optional[List[List[float]]]
 
 
 def load_seed_results(results_dir: Path) -> List[SeedResult]:
@@ -53,9 +55,30 @@ def load_seed_results(results_dir: Path) -> List[SeedResult]:
             continue
 
         with metrics_path.open("r", encoding="utf-8") as f:
-            data: Dict[str, float] = json.load(f)
+            data: Dict[str, Any] = json.load(f)
 
         seed_id: int = int(seed_dir.name.split("_")[1])
+
+        raw_per_class = data.get("per_class", {})
+        per_class: Dict[str, Dict[str, float]] = {}
+        if isinstance(raw_per_class, dict):
+            for label, stats in raw_per_class.items():
+                if isinstance(stats, dict):
+                    per_class[str(label)] = {
+                        "precision": float(stats.get("precision", 0.0)),
+                        "recall": float(stats.get("recall", 0.0)),
+                        "f1": float(stats.get("f1", 0.0)),
+                        "support": float(stats.get("support", 0.0)),
+                    }
+
+        raw_confusion = data.get("confusion_matrix")
+        confusion: Optional[List[List[float]]] = None
+        if isinstance(raw_confusion, list):
+            confusion = [
+                [float(v) for v in row]
+                for row in raw_confusion
+                if isinstance(row, list)
+            ]
 
         results.append(
             SeedResult(
@@ -64,6 +87,8 @@ def load_seed_results(results_dir: Path) -> List[SeedResult]:
                 precision=float(data["precision"]),
                 recall=float(data["recall"]),
                 f1=float(data["f1"]),
+                per_class=per_class,
+                confusion_matrix=confusion,
             )
         )
 
@@ -72,6 +97,9 @@ def load_seed_results(results_dir: Path) -> List[SeedResult]:
 
 def compute_summary(results: Sequence[SeedResult]) -> Dict[str, float]:
     """Compute mean and std for all metrics."""
+    if not results:
+        raise ValueError("No seed results found; cannot compute summary.")
+
     accuracies: np.ndarray = np.array([r.accuracy for r in results])
     precisions: np.ndarray = np.array([r.precision for r in results])
     recalls: np.ndarray = np.array([r.recall for r in results])
@@ -89,12 +117,62 @@ def compute_summary(results: Sequence[SeedResult]) -> Dict[str, float]:
     }
 
 
+def compute_per_class_summary(
+    results: Sequence[SeedResult],
+) -> Dict[str, Dict[str, float]]:
+    """Aggregate per-class metrics across seeds."""
+    labels = sorted({label for r in results for label in r.per_class.keys()})
+    summary: Dict[str, Dict[str, float]] = {}
+
+    for label in labels:
+        p_vals = [r.per_class[label]["precision"] for r in results if label in r.per_class]
+        r_vals = [r.per_class[label]["recall"] for r in results if label in r.per_class]
+        f_vals = [r.per_class[label]["f1"] for r in results if label in r.per_class]
+        s_vals = [r.per_class[label]["support"] for r in results if label in r.per_class]
+
+        summary[label] = {
+            "precision_mean": float(np.mean(p_vals)) if p_vals else 0.0,
+            "precision_std": float(np.std(p_vals)) if p_vals else 0.0,
+            "recall_mean": float(np.mean(r_vals)) if r_vals else 0.0,
+            "recall_std": float(np.std(r_vals)) if r_vals else 0.0,
+            "f1_mean": float(np.mean(f_vals)) if f_vals else 0.0,
+            "f1_std": float(np.std(f_vals)) if f_vals else 0.0,
+            "support_mean": float(np.mean(s_vals)) if s_vals else 0.0,
+        }
+
+    return summary
+
+
+def compute_confusion_summary(results: Sequence[SeedResult]) -> Dict[str, List[List[float]]]:
+    """Aggregate confusion matrices across seeds (sum + row-normalized)."""
+    matrices = [np.array(r.confusion_matrix, dtype=float) for r in results if r.confusion_matrix]
+    if not matrices:
+        return {"sum": [], "row_normalized": []}
+
+    cm_sum = np.sum(matrices, axis=0)
+    row_sums = cm_sum.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1.0
+    cm_norm = cm_sum / row_sums
+
+    return {
+        "sum": cm_sum.tolist(),
+        "row_normalized": cm_norm.tolist(),
+    }
+
+
 def save_summary(summary: Dict[str, float], output_path: Path) -> None:
     """Save summary JSON."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
+
+
+def save_json_dict(obj: Dict[str, Any], output_path: Path) -> None:
+    """Save any dictionary as JSON."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
 
 
 def save_csv(results: Sequence[SeedResult], output_path: Path) -> None:
@@ -107,6 +185,43 @@ def save_csv(results: Sequence[SeedResult], output_path: Path) -> None:
 
         for r in results:
             writer.writerow([r.seed, r.accuracy, r.precision, r.recall, r.f1])
+
+
+def save_per_class_csv(
+    per_class_summary: Dict[str, Dict[str, float]],
+    output_path: Path,
+) -> None:
+    """Save aggregated per-class metrics to CSV."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with output_path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            [
+                "label",
+                "precision_mean",
+                "precision_std",
+                "recall_mean",
+                "recall_std",
+                "f1_mean",
+                "f1_std",
+                "support_mean",
+            ]
+        )
+
+        for label, metrics in sorted(per_class_summary.items()):
+            writer.writerow(
+                [
+                    label,
+                    metrics.get("precision_mean", 0.0),
+                    metrics.get("precision_std", 0.0),
+                    metrics.get("recall_mean", 0.0),
+                    metrics.get("recall_std", 0.0),
+                    metrics.get("f1_mean", 0.0),
+                    metrics.get("f1_std", 0.0),
+                    metrics.get("support_mean", 0.0),
+                ]
+            )
 
 
 def plot_results(
@@ -196,11 +311,18 @@ def _cli() -> None:
     output_dir = Path(output_dir_value)
 
     results = load_seed_results(results_dir)
+    if not results:
+        raise ValueError(f"No metrics.json files found in {results_dir}")
 
     summary = compute_summary(results)
+    per_class_summary = compute_per_class_summary(results)
+    confusion_summary = compute_confusion_summary(results)
 
     save_summary(summary, output_dir / "results_summary.json")
     save_csv(results, output_dir / "results.csv")
+    save_json_dict(per_class_summary, output_dir / "per_class_summary.json")
+    save_per_class_csv(per_class_summary, output_dir / "per_class_summary.csv")
+    save_json_dict(confusion_summary, output_dir / "confusion_summary.json")
 
     plot_results(results, per_seed_title, output_dir / "per_seed.png")
     plot_summary_bar(summary, summary_label, output_dir / "summary.png")
